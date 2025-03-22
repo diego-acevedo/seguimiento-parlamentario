@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    command: uvicorn api.app:app --workers 8 --host 0.0.0.0 --port 8000
+    env_file: .env
+    ports:
+      - "8000:8000"
+
+  celery_worker:
+    build: .
+    command: celery -A seguimiento_parlamentario.celery.app worker --loglevel=info --pool=threads --concurrency=4
+    env_file: .env
+
+  celery_beat:
+    build: .
+    command: celery -A seguimiento_parlamentario.celery.app beat --loglevel=info
+    env_file: .env

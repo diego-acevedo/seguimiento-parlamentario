@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Mental - {{ commission.name }} ({{ commission.chamber }}) - Sesión {{ session.id }}</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        html, body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          padding: 16px;
+          gap: 16px;
+        }
+        
+        #mindmap {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            cursor: grab;
+            width: 100%;
+            flex-grow: 1;
+            min-height: 200px; /* Default height for embedding */
+        }
+        
+        #mindmap:active {
+            cursor: grabbing;
+        }
+        
+        .node rect {
+            stroke-width: 2;
+            rx: 6;
+            ry: 6;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .node rect:hover {
+            stroke-width: 3;
+        }
+        
+        .node text {
+            font-size: 13px;
+            fill: #333;
+            pointer-events: none;
+            text-anchor: start;
+        }
+        
+        .link {
+            fill: none;
+            stroke-width: 2;
+            stroke-opacity: 0.6;
+        }
+        
+        .collapse-indicator {
+            font-size: 16px;
+            font-weight: bold;
+            text-anchor: middle;
+            cursor: pointer;
+        }
+        
+        .instructions {
+            padding: 15px;
+            background-color: #e8f4fd;
+            border-radius: 6px;
+            border-left: 4px solid #4a90e2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="instructions">
+            <strong>Mapa mental interactivo:</strong> Haga clic en los nodos con un indicador [+] o [-] para expandir o contraer las ramas.
+            <strong>Navegación:</strong> Utilice la rueda del ratón para acercar/alejar, haga clic y arrastre para desplazarse por el mapa.
+        </div>
+        
+        <div id="mindmap"></div>
+    </div>
+
+    <script>
+        // Sample data structure
+        const data = {{ data | safe }};
+
+        // Set up dimensions and margins
+        const margin = { top: 40, right: 120, bottom: 40, left: 40 };
+        const containerDiv = document.getElementById('mindmap');
+        const containerWidth = containerDiv.clientWidth;
+        const containerHeight = containerDiv.clientHeight || 600; // Use container height or fallback to 600px
+        const width = containerWidth - margin.left - margin.right;
+        const height = containerHeight - margin.top - margin.bottom;
+
+        // Create SVG with zoom and pan functionality
+        const svg = d3.select("#mindmap")
+            .append("svg")
+            .attr("width", "100%")
+            .attr("height", "100%");
+
+        // Create zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 3])
+            .on("zoom", (event) => {
+                container.attr("transform", event.transform);
+            });
+
+        // Apply zoom to SVG
+        svg.call(zoom);
+
+        // Create container group for all content
+        const container = svg.append("g");
+        
+        const g = container.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // Create tree layout
+        const tree = d3.tree()
+            .nodeSize([80, 200])
+            .separation((a, b) => {
+                // Calculate required separation based on node heights
+                const aHeight = getNodeDimensions(a).height;
+                const bHeight = getNodeDimensions(b).height;
+                const minSeparation = (aHeight + bHeight) / 2 + 20; // 20px padding
+                return Math.max(1, minSeparation / 80); // Normalize to tree scale
+            });
+
+        // Initialize root at center of container
+        const root = d3.hierarchy(data);
+        root.x0 = height / 2;
+        root.y0 = 0;
+
+        // Collapse all children initially
+        function collapse(d) {
+            if (d.children) {
+                d._children = d.children;
+                d._children.forEach(collapse);
+                d.children = null;
+            }
+        }
+        
+        // Collapse all nodes except root
+        if (root.children) {
+            root.children.forEach(collapse);
+        }
+
+        // Color palette for nodes
+        const colorPalette = [
+            '#DFF7FF', // Blue
+            '#FFEFCC', // Yellow
+            '#EBFFE0', // Green
+            '#FFE6FC', // Purple
+            '#FFD5D5', // Red
+        ];
+
+        // Function to assign colors to nodes based on parent
+        function assignColors(nodes) {
+            // Group nodes by depth level
+            const nodesByLevel = d3.group(nodes, d => d.depth);
+            
+            nodesByLevel.forEach((levelNodes, depth) => {
+                if (depth === 0) {
+                    // Root node gets first color
+                    levelNodes[0].color = colorPalette[0];
+                    return;
+                }
+                
+                // Group nodes by parent
+                const nodesByParent = d3.group(levelNodes, d => d.parent.data.name);
+                let colorIndex = 0;
+                
+                nodesByParent.forEach((siblingNodes, parentName) => {
+                    const color = colorPalette[colorIndex % colorPalette.length];
+                    siblingNodes.forEach(node => {
+                        node.color = color;
+                    });
+                    colorIndex++;
+                });
+            });
+        }
+        function wrapText(text, maxWidth) {
+            const words = text.split(' ');
+            const lines = [];
+            let currentLine = '';
+            
+            for (let word of words) {
+                const testLine = currentLine ? `${currentLine} ${word}` : word;
+                if (testLine.length * 7 > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            if (currentLine) lines.push(currentLine);
+            
+            return lines;
+        }
+
+        function getNodeDimensions(d) {
+            const maxWidth = 270; // Increased from 180
+            const lines = wrapText(d.data.name, maxWidth);
+            const width = Math.max(150, Math.min(maxWidth, d.data.name.length * 7 * 1.5)); // Increased base width and multiplied by 1.5
+            const height = Math.max(40, lines.length * 18 + 20);
+            return { width, height, lines };
+        }
+
+        function update(source) {
+            // Compute the new tree layout
+            const treeData = tree(root);
+            const nodes = treeData.descendants();
+            const links = treeData.descendants().slice(1);
+
+            // Assign colors to nodes
+            assignColors(nodes);
+
+            // Normalize for fixed-depth with more horizontal spacing
+            nodes.forEach(d => d.y = d.depth * 350);
+
+            // Update nodes
+            const node = g.selectAll(".node")
+                .data(nodes, d => d.id || (d.id = ++i));
+
+            // Enter new nodes
+            const nodeEnter = node.enter().append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${source.y0},${source.x0})`)
+                .on("click", click);
+
+            // Add rectangles for nodes
+            nodeEnter.append("rect");
+
+            // Add text to nodes
+            nodeEnter.append("text");
+
+            // Add collapse indicators background circles
+            nodeEnter.append("circle")
+                .attr("class", "collapse-circle");
+
+            // Add collapse indicators
+            nodeEnter.append("text")
+                .attr("class", "collapse-indicator");
+
+            // Update existing and new nodes
+            const nodeUpdate = nodeEnter.merge(node);
+
+            // Transition to new position
+            nodeUpdate.transition()
+                .duration(500)
+                .attr("transform", d => `translate(${d.y},${d.x})`);
+
+            // Update rectangles
+            nodeUpdate.select("rect")
+                .each(function(d) {
+                    const dims = getNodeDimensions(d);
+                    d.width = dims.width;
+                    d.height = dims.height;
+                    d.lines = dims.lines;
+                })
+                .attr("width", d => d.width)
+                .attr("height", d => d.height)
+                .attr("x", 0)
+                .attr("y", d => -d.height / 2)
+                .style("fill", d => {
+                    if (d._children) return d3.color(d.color).darker(0.2);
+                    return d3.color(d.color);
+                })
+                .style("stroke", d => d.color);
+
+            // Update text
+            nodeUpdate.select("text")
+                .attr("x", 10)
+                .attr("y", d => {
+                    const totalTextHeight = d.lines.length * 18;
+                    return -totalTextHeight / 2 + 12;
+                })
+                .selectAll("tspan")
+                .data(d => d.lines)
+                .join("tspan")
+                .attr("x", 10)
+                .attr("dy", (d, i) => i === 0 ? 0 : 18)
+                .text(d => d);
+
+            // Update collapse indicator circles
+            nodeUpdate.select(".collapse-circle")
+                .attr("cx", d => d.width + 15)
+                .attr("cy", 0)
+                .attr("r", 10)
+                .style("display", d => (d.children || d._children) ? "block" : "none")
+                .style("fill", d => d.color)
+                .style("cursor", "pointer");
+
+            // Update collapse indicators
+            nodeUpdate.select(".collapse-indicator")
+                .attr("x", d => d.width + 15)
+                .attr("y", 2)
+                .style("display", d => (d.children || d._children) ? "block" : "none")
+                .style("font-weight", "bold")
+                .style("cursor", "pointer")
+                .style("text-anchor", "middle")
+                .style("dominant-baseline", "middle")
+                .text(d => d.children ? "−" : "+");
+
+            // Remove exiting nodes
+            const nodeExit = node.exit().transition()
+                .duration(500)
+                .attr("transform", d => `translate(${source.y},${source.x})`)
+                .remove();
+
+            nodeExit.select(".collapse-circle")
+                .attr("r", 0);
+
+            nodeExit.select("rect")
+                .attr("width", 0)
+                .attr("height", 0);
+
+            nodeExit.select("text")
+                .style("fill-opacity", 0);
+
+            // Update links
+            const link = g.selectAll(".link")
+                .data(links, d => d.id)
+                .style("stroke", d => d.color);;
+
+            // Enter new links
+            const linkEnter = link.enter().insert("path", "g")
+                .attr("class", "link")
+                .attr("d", d => {
+                    const o = { x: source.x0, y: source.y0 };
+                    return createLinkPath(o, o);
+                });
+
+            // Update existing and new links
+            const linkUpdate = linkEnter.merge(link);
+
+            linkUpdate.transition()
+                .duration(500)
+                .attr("d", d => createLinkPath(d, d.parent))
+                .style("stroke", d => d3.color(d.color).darker(0.2));
+
+            // Remove exiting links
+            link.exit().transition()
+                .duration(500)
+                .attr("d", d => {
+                    const o = { x: source.x, y: source.y };
+                    return createLinkPath(o, o);
+                })
+                .remove();
+
+            // Store old positions for transition
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+        }
+
+        // Create curved path from parent right side to child left side
+        function createLinkPath(d, parent) {
+            const sourceX = parent.x;
+            const sourceY = parent.y + (parent.width || 0);
+            const targetX = d.x;
+            const targetY = d.y;
+            
+            const midY = (sourceY + targetY) / 2;
+            
+            return `M${sourceY},${sourceX}
+                    C${midY},${sourceX}
+                     ${midY},${targetX}
+                     ${targetY},${targetX}`;
+        }
+
+        // Toggle children on click
+        function click(event, d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+            } else {
+                d.children = d._children;
+                d._children = null;
+            }
+            update(d);
+        }
+
+        // Initialize counter for unique IDs
+        let i = 0;
+
+        // Set initial zoom/pan to center the root node
+        const initialTransform = d3.zoomIdentity
+            .translate(margin.left + 50, height / 2 + margin.top)
+            .scale(1);
+        
+        svg.call(zoom.transform, initialTransform);
+
+        // Initial render
+        update(root);
+    </script>
+</body>
+</html>

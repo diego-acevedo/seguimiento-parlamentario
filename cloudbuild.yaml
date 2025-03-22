@@ -1,0 +1,15 @@
+substitutions:
+  _PROJECT_ID: "seguimiento-parlamentario"   # default, can be overridden at build time
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-f', './Dockerfile',
+        '-t', 'gcr.io/${_PROJECT_ID}/session-processing',
+        '.'
+      ]
+
+images:
+  - 'gcr.io/${_PROJECT_ID}/session-processing'
