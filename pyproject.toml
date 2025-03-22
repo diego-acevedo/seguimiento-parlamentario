@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seguimiento_parlamentario"
+version = "0.1.0"
+description = "A simple Python project for extracting and processing data from the chilean Parliament."
+authors = [
+    { name = "Diego Acevedo", email = "dacevedo@dcc.uchile.cl" }
+]
+
+requires-python = ">=3.12"
+
+dependencies = [
+    "selenium==4.30.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8"
+]
+
+test = [
+    "pytest",
+    "pytest-cov"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
