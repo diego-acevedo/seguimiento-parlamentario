@@ -114,6 +114,15 @@ class Scraper:
         """
         return []
 
+    def get_commissions(self) -> list[dict]:
+        """
+        Retrieves all commissions from a chamber of the Parliament.
+
+        :return: A list containing all commissions.
+        :rtype: list[dict]
+        """
+        return []
+
 
 class SenateScraper(Scraper):
     """
@@ -277,6 +286,31 @@ class SenateScraper(Scraper):
             "members": list(members),
             "guests": list(guests),
         }
+    
+    def get_commissions(self) -> list[dict]:
+        driver = WebDriver.get_driver()
+        driver.get(self.url)
+
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//div[@class='tabs__content']//div[@class='component']//a"))
+        )
+
+        commissions_content = driver.find_elements(By.XPATH, "//div[@class='tabs__content']//div[@class='component']//a")
+
+        commissions = []
+        for commission in commissions_content:
+            id = re.search(r'\d+', commission.get_attribute("href")).group(0)
+            name = commission.find_element(By.TAG_NAME, "span").text
+
+            commissions.append({
+                "_id": id,
+                "name": name,
+                "chamber": "Senado",
+            })
+
+        WebDriver.quit_driver()
+
+        return commissions
 
 
 class ChamberOfDeputiesScraper(Scraper):
@@ -403,6 +437,25 @@ class ChamberOfDeputiesScraper(Scraper):
             )
 
         return attendance
+    
+    def get_commissions(self) -> list[dict]:
+        driver = WebDriver.get_driver()
+        driver.get(f"{self.url}/comisiones_permanentes.aspx")
+
+        commissions_content = driver.find_elements(By.XPATH, "//table//tbody//tr")
+
+        commissions = []
+        for commission in commissions_content:
+            commission_cell = commission.find_elements(By.TAG_NAME, "td")[1]
+            commissions.append({
+                "_id": re.search(r'prmID=(\d+)', commission_cell.find_element(By.TAG_NAME, "a").get_attribute('href')).group(1),
+                "name": f"Comisión de {commission_cell.text}",
+                "chamber": "Cámara de Diputados",
+            })
+        
+        WebDriver.quit_driver()
+
+        return commissions
 
     def __select(self, driver, class_name, value):
         select_element = driver.find_element(
