@@ -44,7 +44,7 @@ class Scraper:
         self.url = url
 
     def process_data(
-        self, commission_id: int, start: dt.date, end: dt.date
+        self, commission_id: int, start: dt.datetime, end: dt.datetime
     ) -> list[dict]:
         """
         Scrapes the website and extracts parliamentary session data within the given date range.
@@ -52,15 +52,15 @@ class Scraper:
         :param commission_id: The ID of the parliamentary commission.
         :type commission_id: int
         :param start: The start date of the period to scrape.
-        :type start: datetime.date
+        :type start: datetime.datetime
         :param end: The end date of the period to scrape.
-        :type end: datetime.date
+        :type end: datetime.datetime
         :return: A list containing session data including general info, context, and attendance.
         :rtype: list[dict]
         """
         sessions = self.get_sessions(commission_id, start, end)
         sessions = list(
-            filter(lambda s: s["date"] >= start and s["date"] <= end, sessions)
+            filter(lambda s: dt.datetime.combine(s["date"], s["start"]) >= start and dt.datetime.combine(s["date"], s["start"]) <= end, sessions)
         )
 
         for session in sessions:
@@ -72,7 +72,7 @@ class Scraper:
         return sessions
 
     def get_sessions(
-        self, commission_id: int, start: dt.date, end: dt.date
+        self, commission_id: int, start: dt.datetime, end: dt.datetime
     ) -> list[dict]:
         """
         Retrieves a list of session metadata from a given parliamentary commission within a date range.
@@ -80,9 +80,9 @@ class Scraper:
         :param commission_id: The ID of the commission.
         :type commission_id: int
         :param start: The start date of the period.
-        :type start: datetime.date
+        :type start: datetime.datetime
         :param end: The end date of the period.
-        :type end: datetime.date
+        :type end: datetime.datetime
         :return: A list of session metadata.
         :rtype: list[dict]
         """
@@ -140,7 +140,7 @@ class SenateScraper(Scraper):
         )
 
     def get_sessions(
-        self, commission_id: int, start: dt.date, end: dt.date
+        self, commission_id: int, start: dt.datetime, end: dt.datetime
     ) -> list[dict]:
         driver = WebDriver.get_driver()
         driver.get(self.__commission_url(commission_id))
@@ -161,8 +161,8 @@ class SenateScraper(Scraper):
             match = re.search(
                 r"(\d{2}/\d{2}/\d{4}) al (\d{2}/\d{2}/\d{4})", option.text
             )
-            start_date = dt.datetime.strptime(match.group(1), "%d/%m/%Y").date()
-            end_date = dt.datetime.strptime(match.group(2), "%d/%m/%Y").date()
+            start_date = dt.datetime.strptime(match.group(1), "%d/%m/%Y")
+            end_date = dt.datetime.strptime(match.group(2), "%d/%m/%Y")
             if (start <= end_date) and (end >= start_date):
                 values.append(option.get_attribute("value"))
 
@@ -326,7 +326,7 @@ class ChamberOfDeputiesScraper(Scraper):
         }
 
     def get_sessions(
-        self, commission_id: int, start: dt.date, end: dt.date
+        self, commission_id: int, start: dt.datetime, end: dt.datetime
     ) -> list[dict]:
         driver = WebDriver.get_driver()
         driver.get(self.__commission_url(commission_id))
@@ -336,8 +336,8 @@ class ChamberOfDeputiesScraper(Scraper):
         for year in range(start.year, end.year + 1):
             self.__select(driver, "year", str(year))
             for month in range(
-                max(start, dt.date(year, 1, 1)).month,
-                min(end, dt.date(year, 12, 31)).month + 1,
+                max(start, dt.datetime(year=year, month=1, day=1)).month,
+                min(end, dt.datetime(year=year+1, month=1, day=1)).month + 1,
             ):
                 self.__select(driver, "mes", str(month).zfill(2))
                 rows = driver.find_elements(By.XPATH, "//table//tbody//tr")
