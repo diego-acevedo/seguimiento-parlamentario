@@ -7,6 +7,9 @@ from selenium.common.exceptions import NoSuchElementException
 from seguimiento_parlamentario.extraction.drivers import WebDriver
 import datetime as dt
 import re
+import json
+import importlib.resources as pkg_resources
+from seguimiento_parlamentario import config
 
 
 class Scraper:
@@ -205,12 +208,13 @@ class SenateScraper(Scraper):
                     elements = row.find_elements(By.TAG_NAME, "td")
                     new_sessions.append(
                         {
-                            "id": re.search(
+                            "_id": re.search(
                                 r"/\d+/(\d+)",
                                 elements[4]
                                 .find_element("tag name", "a")
                                 .get_attribute("href"),
                             ).group(1),
+                            "commission_id": commission_id,
                             "date": dt.datetime.strptime(
                                 elements[0].text, "%d/%m/%Y"
                             ).date(),
@@ -297,16 +301,19 @@ class SenateScraper(Scraper):
 
         commissions_content = driver.find_elements(By.XPATH, "//div[@class='tabs__content']//div[@class='component']//a")
 
-        commissions = []
-        for commission in commissions_content:
-            id = re.search(r'\d+', commission.get_attribute("href")).group(0)
-            name = commission.find_element(By.TAG_NAME, "span").text
+        with pkg_resources.files(config).joinpath("yt-keywords.json").open("r", encoding="utf-8") as f:
+            keywords = json.load(f)
+            commissions = []
+            for commission in commissions_content:
+                id = re.search(r'\d+', commission.get_attribute("href")).group(0)
+                name = commission.find_element(By.TAG_NAME, "span").text
 
-            commissions.append({
-                "_id": id,
-                "name": name,
-                "chamber": "Senado",
-            })
+                commissions.append({
+                    "_id": id,
+                    "name": name,
+                    "chamber": "Senado",
+                    "search-keywords": keywords["Senado"][id],
+                })
 
         WebDriver.quit_driver()
 
@@ -386,7 +393,8 @@ class ChamberOfDeputiesScraper(Scraper):
                         ).group(1)
                         sessions.append(
                             {
-                                "id": session_id,
+                                "_id": session_id,
+                                "commission_id": commission_id,
                                 "date": self.__str_to_date(cells[1].text),
                                 "start": dt.datetime.strptime(
                                     cells[2].text, "%H:%M"
@@ -445,13 +453,17 @@ class ChamberOfDeputiesScraper(Scraper):
         commissions_content = driver.find_elements(By.XPATH, "//table//tbody//tr")
 
         commissions = []
-        for commission in commissions_content:
-            commission_cell = commission.find_elements(By.TAG_NAME, "td")[1]
-            commissions.append({
-                "_id": re.search(r'prmID=(\d+)', commission_cell.find_element(By.TAG_NAME, "a").get_attribute('href')).group(1),
-                "name": f"Comisión de {commission_cell.text}",
-                "chamber": "Cámara de Diputados",
-            })
+        with pkg_resources.files(config).joinpath("yt-keywords.json").open("r", encoding="utf-8") as f:
+            keywords = json.load(f)
+            for commission in commissions_content:
+                commission_cell = commission.find_elements(By.TAG_NAME, "td")[1]
+                id = re.search(r'prmID=(\d+)', commission_cell.find_element(By.TAG_NAME, "a").get_attribute('href')).group(1)
+                commissions.append({
+                    "_id": id,
+                    "name": f"Comisión de {commission_cell.text}",
+                    "chamber": "Cámara de Diputados",
+                    "search-keywords": keywords["Cámara de Diputados"][id]
+                })
         
         WebDriver.quit_driver()
 
