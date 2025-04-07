@@ -63,12 +63,12 @@ class Scraper:
         """
         sessions = self.get_sessions(commission_id, start, end)
         sessions = list(
-            filter(lambda s: dt.datetime.combine(s["date"], s["start"]) >= start and dt.datetime.combine(s["date"], s["start"]) <= end, sessions)
+            filter(lambda s: s["start"] >= start and s["start"] <= end, sessions)
         )
 
         for session in sessions:
-            session["context"] = self.get_context(session["id"], commission_id)
-            session["attendance"] = self.get_attendance(session["id"], commission_id)
+            session["context"] = self.get_context(session["_id"], commission_id)
+            session["attendance"] = self.get_attendance(session["_id"], commission_id)
 
         WebDriver.quit_driver()
 
@@ -206,6 +206,15 @@ class SenateScraper(Scraper):
 
                 for row in table:
                     elements = row.find_elements(By.TAG_NAME, "td")
+                    date = dt.datetime.strptime(
+                        elements[0].text, "%d/%m/%Y"
+                    ).date()
+                    start_time = dt.datetime.strptime(
+                        elements[2].text, "%H:%M"
+                    ).time()
+                    end_time = dt.datetime.strptime(
+                        elements[3].text, "%H:%M"
+                    ).time()
                     new_sessions.append(
                         {
                             "_id": re.search(
@@ -215,15 +224,8 @@ class SenateScraper(Scraper):
                                 .get_attribute("href"),
                             ).group(1),
                             "commission_id": commission_id,
-                            "date": dt.datetime.strptime(
-                                elements[0].text, "%d/%m/%Y"
-                            ).date(),
-                            "start": dt.datetime.strptime(
-                                elements[2].text, "%H:%M"
-                            ).time(),
-                            "finish": dt.datetime.strptime(
-                                elements[3].text, "%H:%M"
-                            ).time(),
+                            "start": dt.datetime.combine(date, start_time),
+                            "finish": dt.datetime.combine(date, end_time),
                         }
                     )
 
@@ -391,17 +393,19 @@ class ChamberOfDeputiesScraper(Scraper):
                             .find_element(By.TAG_NAME, "a")
                             .get_attribute("href"),
                         ).group(1)
+                        date = self.__str_to_date(cells[1].text)
+                        start_time = dt.datetime.strptime(
+                            cells[2].text, "%H:%M"
+                        ).time()
+                        end_time = dt.datetime.strptime(
+                            cells[3].text, "%H:%M"
+                        ).time()
                         sessions.append(
                             {
                                 "_id": session_id,
                                 "commission_id": commission_id,
-                                "date": self.__str_to_date(cells[1].text),
-                                "start": dt.datetime.strptime(
-                                    cells[2].text, "%H:%M"
-                                ).time(),
-                                "finish": dt.datetime.strptime(
-                                    cells[3].text, "%H:%M"
-                                ).time(),
+                                "start": dt.datetime.combine(date, start_time),
+                                "finish": dt.datetime.combine(date, end_time),
                             }
                         )
                     except NoSuchElementException:

@@ -1,10 +1,15 @@
 from pymongo import MongoClient
+from pymongo import (
+    TEXT,
+    ASCENDING,
+)
 from threading import Lock
 from seguimiento_parlamentario.extraction.scrapers import (
     ChamberOfDeputiesScraper,
     SenateScraper
 )
 import os
+import datetime as dt
 
 scrapers = [
     ChamberOfDeputiesScraper(),
@@ -40,7 +45,16 @@ class MongoDatabase:
         Initializes the database by adding commission data from scrapers.
         """
         for scraper in scrapers:
-            self.add_commissions(scraper.get_commissions())
+            commissions = scraper.get_commissions()
+            default_date = dt.datetime.now() - dt.timedelta(weeks=2)
+            for commission in commissions:
+                commission["last-update"] = default_date
+            self.add_commissions(commissions)
+        
+        collection = self.db["sessions"]
+        collection.create_index([('commission_id', ASCENDING)])
+        collection.create_index([('date', ASCENDING)])
+        collection.create_index([('transcription', TEXT)])
     
     def find_commissions(self, query: dict) -> list[dict]:
         """
@@ -87,3 +101,9 @@ class MongoDatabase:
         """
         sessions = self.db["sessions"]
         sessions.insert_many(new_sessions)
+    
+    def update_last_scraping(self, commission_id: str, new_date: dt.datetime):
+        commissions = self.db["commissions"]
+        f = { "_id": commission_id }
+        v = { "$set": { "last-update": new_date } }
+        commissions.update_one(f, v)

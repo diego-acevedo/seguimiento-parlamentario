@@ -42,10 +42,10 @@ class VideoProcessor:
         response = requests.get('https://www.googleapis.com/youtube/v3/search', params={
             'part': 'snippet',
             'channelId': self.channel_id,
-            "publishedAfter": self.__yt_date(session["date"], session["start"]),
-            "publishedBefore": self.__yt_date(session["date"], session["start"], delta=1),
+            "publishedAfter": self.__yt_date(session["start"]),
+            "publishedBefore": self.__yt_date(session["start"], delta=1),
             "type": "video",
-            "q": f"{self.session_type} {" ".join(commission["search-keywords"])}",
+            "q": f"{self.session_type} {' '.join(commission['search-keywords'])}",
             'key': os.getenv('YT_API_KEY'),
         })
         
@@ -56,7 +56,7 @@ class VideoProcessor:
         # Manage case of multiple matches
         video_match = None
         for video in response.json()["items"]:
-            if self.check_title(video["snippet"]["title"], session["start"]):
+            if self.check_title(video["snippet"]["title"], session["start"].time()):
                 video_match = video
                 break
 
@@ -72,10 +72,10 @@ class VideoProcessor:
 
         return session
 
-    def __yt_date(self, date: dt.date, time: dt.time, delta: int = 0) -> str:
-        combined_datetime = dt.datetime.combine(date, time) + dt.timedelta(days=delta)
+    def __yt_date(self, date: dt.datetime, delta: int = 0) -> str:
+        delta_datetime = date + dt.timedelta(days=delta)
 
-        return combined_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return delta_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
     
     def check_title(self, title: str, time: dt.time) -> bool:
         """
@@ -124,3 +124,15 @@ class ChamberOfDeputiesVideoProcessor(VideoProcessor):
         pattern = rf"^Comision .*(?: /{keep})?(?<!/{exclude})/ \d{'{1,2}'} [a-z]+ \d{'{4}'}$"
 
         return bool(re.match(pattern, normalized_title))
+
+processors: dict[VideoProcessor] = {
+    "Senado": SenateVideoProcessor(),
+    "Cámara de Diputados": ChamberOfDeputiesVideoProcessor(),
+}
+
+def get_video_transcript(session):
+    [commission] = MongoDatabase().find_commissions({
+        "_id": session["commission_id"]
+    })
+    processor: VideoProcessor = processors[commission["chamber"]]
+    return processor.get_transcription_from_yt(session)

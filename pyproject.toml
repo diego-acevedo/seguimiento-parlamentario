@@ -10,13 +10,14 @@ authors = [
     { name = "Diego Acevedo", email = "dacevedo@dcc.uchile.cl" }
 ]
 
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 
 dependencies = [
     "selenium==4.30.0",
     "pymongo==4.11.3",
     "requests==2.32.3",
     "youtube-transcript-api==1.0.3",
+    "celery==5.4.0",
 ]
 
 [project.optional-dependencies]
@@ -33,3 +34,6 @@ test = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools]
+py-modules = ["setup"]
