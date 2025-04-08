@@ -4,7 +4,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
 from selenium.webdriver.support.select import Select
 from selenium.common.exceptions import NoSuchElementException
-from seguimiento_parlamentario.extraction.drivers import WebDriver
+from seguimiento_parlamentario.core.drivers import WebDriver
 import datetime as dt
 import re
 import json
@@ -206,6 +206,8 @@ class SenateScraper(Scraper):
 
                 for row in table:
                     elements = row.find_elements(By.TAG_NAME, "td")
+                    if elements[0].text == "No hay resultados que coincidan con la búsqueda":
+                        break
                     date = dt.datetime.strptime(
                         elements[0].text, "%d/%m/%Y"
                     ).date()
@@ -251,21 +253,32 @@ class SenateScraper(Scraper):
         info = []
 
         for element in details:
-            info.append(
-                {
-                    "topic": element.find_element(
-                        By.XPATH, "./h4[contains(text(), 'Tema')]/following-sibling::p"
-                    ).text,
-                    "aspects": element.find_element(
-                        By.XPATH,
-                        "./h4[contains(text(), 'Aspectos considerados')]/following-sibling::p",
-                    ).text,
-                    "agreements": element.find_element(
-                        By.XPATH,
-                        "./h4[contains(text(), 'Acuerdos')]/following-sibling::p",
-                    ).text,
-                }
-            )
+            data = {}
+            try:
+                data["topic"] = element.find_element(
+                    By.XPATH,
+                    "./h4[contains(text(), 'Tema')]/following-sibling::p"
+                ).text
+            except NoSuchElementException:
+                pass
+
+            try:
+                data["aspects"] = element.find_element(
+                    By.XPATH,
+                    "./h4[contains(text(), 'Aspectos considerados')]/following-sibling::p",
+                ).text
+            except NoSuchElementException:
+                pass
+
+            try:
+                data["agreements"] = element.find_element(
+                    By.XPATH,
+                    "./h4[contains(text(), 'Acuerdos')]/following-sibling::p",
+                ).text
+            except NoSuchElementException:
+                pass
+
+            info.append(data)
 
         return info
 
