@@ -4,7 +4,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
 from selenium.webdriver.support.select import Select
 from selenium.common.exceptions import NoSuchElementException
-from seguimiento_parlamentario.core.drivers import WebDriver
+from seguimiento_parlamentario.core.drivers import get_driver
 import datetime as dt
 import re
 import json
@@ -45,6 +45,7 @@ class Scraper:
 
     def __init__(self, url):
         self.url = url
+        self.driver = None
 
     def process_data(
         self, commission_id: int, start: dt.datetime, end: dt.datetime
@@ -61,6 +62,9 @@ class Scraper:
         :return: A list containing session data including general info, context, and attendance.
         :rtype: list[dict]
         """
+        if self.driver is None:
+            self.driver = get_driver()
+        
         sessions = self.get_sessions(commission_id, start, end)
         sessions = list(
             filter(lambda s: s["start"] >= start and s["start"] <= end, sessions)
@@ -70,7 +74,7 @@ class Scraper:
             session["context"] = self.get_context(session["_id"], commission_id)
             session["attendance"] = self.get_attendance(session["_id"], commission_id)
 
-        WebDriver.quit_driver()
+        self.driver.quit()
 
         return sessions
 
@@ -154,19 +158,18 @@ class SenateScraper(Scraper):
     def get_sessions(
         self, commission_id: int, start: dt.datetime, end: dt.datetime
     ) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(self.__commission_url(commission_id))
+        self.driver.get(self.__commission_url(commission_id))
 
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(self.driver, 10).until(
             EC.presence_of_element_located((By.XPATH, "//button[text()='Sesiones']"))
         )
 
         # Move to sessions section
-        button = driver.find_element(By.XPATH, "//button[text()='Sesiones']")
-        ActionChains(driver).scroll_to_element(button).perform()
+        button = self.driver.find_element(By.XPATH, "//button[text()='Sesiones']")
+        ActionChains(self.driver).scroll_to_element(button).perform()
         button.click()
 
-        select = Select(driver.find_element(By.ID, "legislatura"))
+        select = Select(self.driver.find_element(By.ID, "legislatura"))
         values = []
         # Filter out selection option outside date range
         for option in select.options:
@@ -181,28 +184,28 @@ class SenateScraper(Scraper):
         sessions = []
 
         for value in list(set(values)):
-            WebDriverWait(driver, 5).until(
+            WebDriverWait(self.driver, 5).until(
                 lambda d: d.find_element(By.ID, "legislatura").is_enabled()
             )
             select.select_by_value(value)
             while True:
-                WebDriverWait(driver, 5).until(
+                WebDriverWait(self.driver, 5).until(
                     lambda d: d.find_element(By.ID, "legislatura").is_enabled()
                 )
 
                 # Find next page button to handle pagination
                 try:
-                    next_arrow = driver.find_element(
+                    next_arrow = self.driver.find_element(
                         By.XPATH,
                         "//a[contains(text(), 'Siguiente') and not(contains(@class, 'disabled'))]",
                     )
-                    ActionChains(driver).scroll_to_element(next_arrow).perform()
+                    ActionChains(self.driver).scroll_to_element(next_arrow).perform()
                 except NoSuchElementException:
                     next_arrow = None
 
                 new_sessions = []
 
-                table = driver.find_elements(By.XPATH, "//table//tbody//tr")
+                table = self.driver.find_elements(By.XPATH, "//table//tbody//tr")
 
                 for row in table:
                     elements = row.find_elements(By.TAG_NAME, "td")
@@ -242,14 +245,13 @@ class SenateScraper(Scraper):
         return sessions
 
     def get_context(self, session_id: int, commission_id: int) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(self.__session_url(commission_id, session_id))
+        self.driver.get(self.__session_url(commission_id, session_id))
 
-        WebDriverWait(driver, 5).until(
+        WebDriverWait(self.driver, 5).until(
             EC.presence_of_element_located((By.CLASS_NAME, "dynamic-content"))
         )
 
-        details = driver.find_elements(By.CLASS_NAME, "dynamic-content")
+        details = self.driver.find_elements(By.CLASS_NAME, "dynamic-content")
         info = []
 
         for element in details:
@@ -283,14 +285,13 @@ class SenateScraper(Scraper):
         return info
 
     def get_attendance(self, session_id: int, commission_id: int) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(self.__session_url(commission_id, session_id))
+        self.driver.get(self.__session_url(commission_id, session_id))
 
-        WebDriverWait(driver, 5).until(
+        WebDriverWait(self.driver, 5).until(
             EC.presence_of_element_located((By.CLASS_NAME, "dynamic-content"))
         )
 
-        details = driver.find_elements(By.CLASS_NAME, "dynamic-content")
+        details = self.driver.find_elements(By.CLASS_NAME, "dynamic-content")
         members = set()
         guests = set()
 
@@ -307,14 +308,13 @@ class SenateScraper(Scraper):
         }
     
     def get_commissions(self) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(self.url)
+        self.driver.get(self.url)
 
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(self.driver, 10).until(
             EC.presence_of_element_located((By.XPATH, "//div[@class='tabs__content']//div[@class='component']//a"))
         )
 
-        commissions_content = driver.find_elements(By.XPATH, "//div[@class='tabs__content']//div[@class='component']//a")
+        commissions_content = self.driver.find_elements(By.XPATH, "//div[@class='tabs__content']//div[@class='component']//a")
 
         with pkg_resources.files(config).joinpath("yt-keywords.json").open("r", encoding="utf-8") as f:
             keywords = json.load(f)
@@ -330,7 +330,7 @@ class SenateScraper(Scraper):
                     "search-keywords": keywords["Senado"][id],
                 })
 
-        WebDriver.quit_driver()
+        self.driver.quit()
 
         return commissions
 
@@ -384,19 +384,18 @@ class ChamberOfDeputiesScraper(Scraper):
     def get_sessions(
         self, commission_id: int, start: dt.datetime, end: dt.datetime
     ) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(self.__commission_url(commission_id))
+        self.driver.get(self.__commission_url(commission_id))
 
         sessions = []
 
         for year in range(start.year, end.year + 1):
-            self.__select(driver, "year", str(year))
+            self.__select(self.driver, "year", str(year))
             for month in range(
                 max(start, dt.datetime(year=year, month=1, day=1)).month,
                 min(end, dt.datetime(year=year+1, month=1, day=1)).month + 1,
             ):
-                self.__select(driver, "mes", str(month).zfill(2))
-                rows = driver.find_elements(By.XPATH, "//table//tbody//tr")
+                self.__select(self.driver, "mes", str(month).zfill(2))
+                rows = self.driver.find_elements(By.XPATH, "//table//tbody//tr")
                 for row in rows:
                     cells = row.find_elements(By.TAG_NAME, "td")
                     try:
@@ -427,12 +426,11 @@ class ChamberOfDeputiesScraper(Scraper):
         return sessions
 
     def get_context(self, session_id: int, commission_id: int) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(self.__results_url(commission_id, session_id))
+        self.driver.get(self.__results_url(commission_id, session_id))
 
         results = []
 
-        rows = driver.find_elements(By.XPATH, "//table//tbody//tr")
+        rows = self.driver.find_elements(By.XPATH, "//table//tbody//tr")
         for row in rows:
             cells = row.find_elements(By.TAG_NAME, "td")
             results.append(
@@ -445,12 +443,11 @@ class ChamberOfDeputiesScraper(Scraper):
         return results
 
     def get_attendance(self, session_id: int, commission_id: int) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(self.__attendance_url(commission_id, session_id))
+        self.driver.get(self.__attendance_url(commission_id, session_id))
 
         attendance = []
 
-        attendees = driver.find_elements(By.CLASS_NAME, "integrante")
+        attendees = self.driver.find_elements(By.CLASS_NAME, "integrante")
 
         for attendee in attendees:
             info = attendee.find_elements(By.TAG_NAME, "p")
@@ -464,10 +461,9 @@ class ChamberOfDeputiesScraper(Scraper):
         return attendance
     
     def get_commissions(self) -> list[dict]:
-        driver = WebDriver.get_driver()
-        driver.get(f"{self.url}/comisiones_permanentes.aspx")
+        self.driver.get(f"{self.url}/comisiones_permanentes.aspx")
 
-        commissions_content = driver.find_elements(By.XPATH, "//table//tbody//tr")
+        commissions_content = self.driver.find_elements(By.XPATH, "//table//tbody//tr")
 
         commissions = []
         with pkg_resources.files(config).joinpath("yt-keywords.json").open("r", encoding="utf-8") as f:
@@ -482,7 +478,7 @@ class ChamberOfDeputiesScraper(Scraper):
                     "search-keywords": keywords["Cámara de Diputados"][id]
                 })
         
-        WebDriver.quit_driver()
+        self.driver.quit()
 
         return commissions
 

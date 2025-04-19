@@ -16,6 +16,9 @@ scrapers = [
     SenateScraper(),
 ]
 
+def get_db():
+    return MongoDatabase()
+
 class MongoDatabase:
     """
     Class for handling MongoDB connections and operations.

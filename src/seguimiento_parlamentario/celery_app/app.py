@@ -1,9 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
 import os
-import multiprocessing
-
-multiprocessing.set_start_method('spawn')
 
 app = Celery("tasks", broker=os.getenv("AMQP_URL"))
 

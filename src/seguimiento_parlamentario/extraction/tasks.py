@@ -1,5 +1,5 @@
 from seguimiento_parlamentario.celery_app.app import app
-from seguimiento_parlamentario.core.db import MongoDatabase
+from seguimiento_parlamentario.core.db import get_db
 from seguimiento_parlamentario.processing.tasks import process
 from seguimiento_parlamentario.extraction.scrapers import (
     SenateScraper,
@@ -15,7 +15,7 @@ scrapers = {
 
 @app.task
 def extract():
-    db = MongoDatabase()
+    db = get_db()
     commissions = db.find_commissions({})
 
     today = dt.datetime.now() - dt.timedelta(hours=12)
