@@ -1,3 +1,3 @@
 init:
-	export $(cat .env | xargs)
+	pip install --upgrade pip
 	pip install -e .

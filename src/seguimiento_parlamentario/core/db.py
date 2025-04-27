@@ -51,8 +51,11 @@ class MongoDatabase:
             commissions = scraper.get_commissions()
             default_date = dt.datetime.now() - dt.timedelta(weeks=2)
             for commission in commissions:
-                commission["last-update"] = default_date
-            self.add_commissions(commissions)
+                try:
+                    commission["last-update"] = default_date
+                    self.add_commissions([commission])
+                except:
+                    print(f"Commission {commission['_id']} already exists")
         
         collection = self.db["sessions"]
         collection.create_index([('commission_id', ASCENDING)])
