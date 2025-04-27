@@ -264,7 +264,7 @@ class ChamberOfDeputiesVideoProcessor(VideoProcessor):
     def check_title(self, title: str, time: dt.time) -> bool:
         normalized_title = ''.join(c for c in unicodedata.normalize('NFD', title) if unicodedata.category(c) != 'Mn')
         keep, exclude = ("am", "pm") if time < dt.time(hour=12, minute=0) else ("pm", "am")
-        pattern = rf"^Comision .*(?: /{keep})?(?<!/{exclude})/ \d{'{1,2}'} [a-z]+ \d{'{4}'}$"
+        pattern = rf"^Comision .*(?: /{keep})?(?<!/{exclude})/( [a-zA-Z]+)? \d{'{1,2}'} [a-zA-Z]+ \d{'{4}'}$"
 
         return bool(re.match(pattern, normalized_title))
 
