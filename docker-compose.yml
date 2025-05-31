@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    command: python ./services/processing/app.py
+    env_file: .env
+    ports:
+      - "8000:8000"
+
+  celery_worker:
+    build: .
+    command: celery -A seguimiento_parlamentario.celery.app worker --loglevel=info --pool=threads
+    env_file: .env
+
+  celery_beat:
+    build: .
+    command: celery -A seguimiento_parlamentario.celery.app beat --loglevel=info
+    env_file: .env

@@ -1,5 +1,7 @@
+from abc import ABC, abstractmethod
 from seguimiento_parlamentario.core.db import get_db
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import WebshareProxyConfig
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -12,14 +14,13 @@ import re
 import unicodedata
 import ffmpeg
 import numpy as np
-import whisper
 from seguimiento_parlamentario.core.exceptions import (
     YouTubeVideoNotFoundError,
     VideoUrlNotFoundError,
 )
 from seguimiento_parlamentario.core.drivers import get_driver
 
-class VideoProcessor:
+class VideoProcessor(ABC):
     """
     Base class for processing YouTube videos of parliamentary sessions.
     
@@ -45,9 +46,7 @@ class VideoProcessor:
         Raises:
             YouTubeVideoNotFoundError: If no matching video is found.
         """
-        [commission] = get_db().find_commissions({
-            "_id": session["commission_id"]
-        })
+        commission = get_db().find_commission(session["commission_id"])
         
         # Performs a YouTube search for videos matching the session
         response = requests.get('https://www.googleapis.com/youtube/v3/search', params={
@@ -56,13 +55,13 @@ class VideoProcessor:
             "publishedAfter": self.__yt_date(session["start"]),
             "publishedBefore": self.__yt_date(session["start"], delta=1),
             "type": "video",
-            "q": f"{self.session_type} {' '.join(commission['search-keywords'])}",
+            "q": f"{self.session_type} {' '.join(commission['search_keywords'])}",
             'key': os.getenv('YT_API_KEY'),
         })
         
         # Raise an exception if no videos are found
         if response.json()["pageInfo"]["totalResults"] == 0:
-            raise YouTubeVideoNotFoundError(session_id=session["_id"])
+            raise YouTubeVideoNotFoundError(session_id=session["id"])
 
         # Manage case of multiple matches
         video_match = None
@@ -72,11 +71,18 @@ class VideoProcessor:
                 break
 
         if video_match is None:
-            raise YouTubeVideoNotFoundError(session_id=session["_id"])
+            raise YouTubeVideoNotFoundError(session_id=session["id"])
 
         # Retrieve the video ID and extract the transcript
         video_id = video_match["id"]["videoId"]
-        captions = YouTubeTranscriptApi().fetch(video_id, languages=('es', ), preserve_formatting=True)
+
+        ytt_api = YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username=os.getenv("PROXY_USERNAME"),
+                proxy_password=os.getenv("PROXY_PASSWORD"),
+            )
+        )
+        captions = ytt_api.fetch(video_id, languages=('es', ), preserve_formatting=True)
         transcript = ' '.join(map(lambda x: x.text, captions))
 
         session["transcript"] = transcript
@@ -90,8 +96,9 @@ class VideoProcessor:
 
         return transcription
     
+    @abstractmethod
     def get_video_url(self, session: dict):
-        return ""
+        ...
     
     def __extract_audio_np_from_video(self, url: str) -> np.ndarray:
         # Use ffmpeg to extract mono, 16kHz PCM audio into raw bytes (s16le)
@@ -111,15 +118,14 @@ class VideoProcessor:
         return audio
 
     def __transcribe_audio_np(self, audio_np: np.ndarray) -> str:
-        model = whisper.load_model("base")
-        result = model.transcribe(audio_np, language="es")
-        return result["text"]
+        pass
 
     def __yt_date(self, date: dt.datetime, delta: int = 0) -> str:
         delta_datetime = date + dt.timedelta(days=delta)
 
         return delta_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
     
+    @abstractmethod
     def check_title(self, title: str, time: dt.time) -> bool:
         """
         Abstract method to verify if a video's title matches the session.
@@ -132,7 +138,7 @@ class VideoProcessor:
         Returns:
             bool: True if the title matches.
         """
-        return False
+        ...
 
 
 class SenateVideoProcessor(VideoProcessor):
@@ -156,16 +162,14 @@ class SenateVideoProcessor(VideoProcessor):
         driver = get_driver()
         driver.get(self.videos_website)
 
-        [commission] = get_db().find_commissions({
-            "_id": session["commission_id"]
-        })
+        commission = get_db().find_commission(session["commission_id"])
 
         WebDriverWait(driver, timeout=5).until(
             EC.presence_of_element_located((By.ID, "buscar"))
         )
 
         search_bar = driver.find_element(By.ID, "search_texto")
-        search_bar.send_keys(' '.join(commission['search-keywords']))
+        search_bar.send_keys(' '.join(commission['search_keywords']))
 
         section = Select(driver.find_element(By.ID, "SECCION1"))
         section.select_by_value("7")
@@ -183,7 +187,7 @@ class SenateVideoProcessor(VideoProcessor):
                 EC.presence_of_element_located((By.TAG_NAME, "article"))
             )
         except:
-            raise VideoUrlNotFoundError(session["_id"])
+            raise VideoUrlNotFoundError(session["id"])
 
         player_url = driver.find_element(By.XPATH, "//article//a").get_attribute("href")
 
@@ -210,9 +214,7 @@ class ChamberOfDeputiesVideoProcessor(VideoProcessor):
         driver = get_driver()
         driver.get(self.videos_website)
 
-        [commission] = get_db().find_commissions({
-            "_id": session["commission_id"]
-        })
+        commission = get_db().find_commission(session["commission_id"])
 
         tab_commissions = driver.find_element(By.ID, "tab_comisiones")
         tab_commissions.click()
@@ -226,7 +228,7 @@ class ChamberOfDeputiesVideoProcessor(VideoProcessor):
 
         for option in select_commission.options:
             text = ''.join(char for char in unicodedata.normalize('NFD', option.text.lower()) if unicodedata.category(char) != 'Mn')
-            if all(kw.lower() in text for kw in commission["search-keywords"]):
+            if all(kw.lower() in text for kw in commission["search_keywords"]):
                 select_commission.select_by_visible_text(option.text)
                 break
 
@@ -274,7 +276,5 @@ processors: dict[str, VideoProcessor] = {
 }
 
 def get_video_processor(session):
-    [commission] = get_db().find_commissions({
-        "_id": session["commission_id"]
-    })
+    commission = get_db().find_commission(session["commission_id"])
     return processors[commission["chamber"]]

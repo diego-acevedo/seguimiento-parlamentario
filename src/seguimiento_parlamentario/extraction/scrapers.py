@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -12,7 +13,7 @@ import importlib.resources as pkg_resources
 from seguimiento_parlamentario import config
 
 
-class Scraper:
+class Scraper(ABC):
     """
     A base class for extracting relevant information from a Parliament's website.
     This class serves as a template for web scraping operations related to parliamentary sessions.
@@ -69,13 +70,14 @@ class Scraper:
         )
 
         for session in sessions:
-            session["context"] = self.get_context(driver, session["_id"], commission_id)
-            session["attendance"] = self.get_attendance(driver, session["_id"], commission_id)
+            session["context"] = self.get_context(driver, session["id"], commission_id)
+            session["attendance"] = self.get_attendance(driver, session["id"], commission_id)
 
         driver.quit()
 
         return sessions
 
+    @abstractmethod
     def get_sessions(
         self, driver, commission_id: int, start: dt.datetime, end: dt.datetime
     ) -> list[dict]:
@@ -91,8 +93,9 @@ class Scraper:
         :return: A list of session metadata.
         :rtype: list[dict]
         """
-        return []
+        ...
 
+    @abstractmethod
     def get_context(self, driver, session_id: int, commission_id: int) -> list[dict]:
         """
         Extracts contextual information from a specific session.
@@ -104,8 +107,9 @@ class Scraper:
         :return: A list containing general information of the session's content.
         :rtype: list[dict]
         """
-        return []
+        ...
 
+    @abstractmethod
     def get_attendance(self, driver, session_id: int, commission_id: int) -> list[dict]:
         """
         Retrieves attendance information from a specific session.
@@ -117,8 +121,9 @@ class Scraper:
         :return: A list containing a session's attendees.
         :rtype: list[dict]
         """
-        return []
+        ...
 
+    @abstractmethod
     def get_commissions(self) -> list[dict]:
         """
         Retrieves all commissions from a chamber of the Parliament.
@@ -126,7 +131,7 @@ class Scraper:
         :return: A list containing all commissions.
         :rtype: list[dict]
         """
-        return []
+        ...
 
 
 class SenateScraper(Scraper):
@@ -174,8 +179,8 @@ class SenateScraper(Scraper):
             match = re.search(
                 r"(\d{2}/\d{2}/\d{4}) al (\d{2}/\d{2}/\d{4})", option.text
             )
-            start_date = dt.datetime.strptime(match.group(1), "%d/%m/%Y")
-            end_date = dt.datetime.strptime(match.group(2), "%d/%m/%Y")
+            start_date = dt.datetime.strptime(match.group(1), "%d/%m/%Y").astimezone(dt.timezone.utc)
+            end_date = dt.datetime.strptime(match.group(2), "%d/%m/%Y").astimezone(dt.timezone.utc)
             if (start <= end_date) and (end >= start_date):
                 values.append(option.get_attribute("value"))
 
@@ -220,15 +225,15 @@ class SenateScraper(Scraper):
                     ).time()
                     new_sessions.append(
                         {
-                            "_id": re.search(
+                            "id": re.search(
                                 r"/\d+/(\d+)",
                                 elements[4]
                                 .find_element("tag name", "a")
                                 .get_attribute("href"),
                             ).group(1),
                             "commission_id": commission_id,
-                            "start": dt.datetime.combine(date, start_time),
-                            "finish": dt.datetime.combine(date, end_time),
+                            "start": dt.datetime.combine(date, start_time).astimezone(dt.timezone.utc),
+                            "finish": dt.datetime.combine(date, end_time).astimezone(dt.timezone.utc),
                         }
                     )
 
@@ -323,10 +328,10 @@ class SenateScraper(Scraper):
                 name = commission.find_element(By.TAG_NAME, "span").text
 
                 commissions.append({
-                    "_id": id,
+                    "id": id,
                     "name": name,
                     "chamber": "Senado",
-                    "search-keywords": keywords["Senado"][id],
+                    "search_keywords": keywords["Senado"][id],
                 })
 
         driver.quit()
@@ -389,9 +394,10 @@ class ChamberOfDeputiesScraper(Scraper):
 
         for year in range(start.year, end.year + 1):
             self.__select(driver, "year", str(year))
+            print(start, dt.datetime(year=year, month=1, day=1).astimezone(dt.timezone.utc))
             for month in range(
-                max(start, dt.datetime(year=year, month=1, day=1)).month,
-                min(end, dt.datetime(year=year+1, month=1, day=1)).month + 1,
+                max(start, dt.datetime(year=year, month=1, day=1).astimezone(dt.timezone.utc)).month,
+                min(end, dt.datetime(year=year, month=12, day=31).astimezone(dt.timezone.utc)).month + 1,
             ):
                 self.__select(driver, "mes", str(month).zfill(2))
                 rows = driver.find_elements(By.XPATH, "//table//tbody//tr")
@@ -413,10 +419,10 @@ class ChamberOfDeputiesScraper(Scraper):
                         ).time()
                         sessions.append(
                             {
-                                "_id": session_id,
+                                "id": session_id,
                                 "commission_id": commission_id,
-                                "start": dt.datetime.combine(date, start_time),
-                                "finish": dt.datetime.combine(date, end_time),
+                                "start": dt.datetime.combine(date, start_time).astimezone(dt.timezone.utc),
+                                "finish": dt.datetime.combine(date, end_time).astimezone(dt.timezone.utc),
                             }
                         )
                     except NoSuchElementException:
@@ -472,10 +478,10 @@ class ChamberOfDeputiesScraper(Scraper):
                 commission_cell = commission.find_elements(By.TAG_NAME, "td")[1]
                 id = re.search(r'prmID=(\d+)', commission_cell.find_element(By.TAG_NAME, "a").get_attribute('href')).group(1)
                 commissions.append({
-                    "_id": id,
+                    "id": id,
                     "name": f"Comisión de {commission_cell.text}",
                     "chamber": "Cámara de Diputados",
-                    "search-keywords": keywords["Cámara de Diputados"][id]
+                    "search_keywords": keywords["Cámara de Diputados"][id]
                 })
         
         driver.quit()
