@@ -225,12 +225,12 @@ class SenateScraper(Scraper):
                     ).time()
                     new_sessions.append(
                         {
-                            "id": re.search(
+                            "id": int(re.search(
                                 r"/\d+/(\d+)",
                                 elements[4]
                                 .find_element("tag name", "a")
                                 .get_attribute("href"),
-                            ).group(1),
+                            ).group(1)),
                             "commission_id": commission_id,
                             "start": dt.datetime.combine(date, start_time).astimezone(dt.timezone.utc),
                             "finish": dt.datetime.combine(date, end_time).astimezone(dt.timezone.utc),
@@ -328,7 +328,7 @@ class SenateScraper(Scraper):
                 name = commission.find_element(By.TAG_NAME, "span").text
 
                 commissions.append({
-                    "id": id,
+                    "id": int(id),
                     "name": name,
                     "chamber": "Senado",
                     "search_keywords": keywords["Senado"][id],
@@ -419,7 +419,7 @@ class ChamberOfDeputiesScraper(Scraper):
                         ).time()
                         sessions.append(
                             {
-                                "id": session_id,
+                                "id": int(session_id),
                                 "commission_id": commission_id,
                                 "start": dt.datetime.combine(date, start_time).astimezone(dt.timezone.utc),
                                 "finish": dt.datetime.combine(date, end_time).astimezone(dt.timezone.utc),
@@ -478,7 +478,7 @@ class ChamberOfDeputiesScraper(Scraper):
                 commission_cell = commission.find_elements(By.TAG_NAME, "td")[1]
                 id = re.search(r'prmID=(\d+)', commission_cell.find_element(By.TAG_NAME, "a").get_attribute('href')).group(1)
                 commissions.append({
-                    "id": id,
+                    "id": int(id),
                     "name": f"Comisión de {commission_cell.text}",
                     "chamber": "Cámara de Diputados",
                     "search_keywords": keywords["Cámara de Diputados"][id]

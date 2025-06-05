@@ -11,6 +11,7 @@ from pymongo import (
     TEXT,
     ASCENDING,
 )
+from abc import ABC, abstractmethod
 
 scrapers = [
     ChamberOfDeputiesScraper(),
@@ -24,7 +25,40 @@ def get_db():
         return MongoDatabase()
     return None
 
-class BigQueryDatabase:
+class DataBase(ABC):
+    @abstractmethod
+    def init(self):
+        ...
+
+    @abstractmethod
+    def find_commission(self, commission_id):
+        ...
+    
+    @abstractmethod
+    def get_commissions_ids(self):
+        ...
+
+    @abstractmethod
+    def add_commissions(self, commissions):
+        ...
+
+    @abstractmethod
+    def add_session(self, new_session):
+        ...
+
+    @abstractmethod
+    def update_last_scraping(self, commission_id: str, new_date: dt.datetime):
+        ...
+
+    @abstractmethod
+    def add_summary(self, new_summary):
+        ...
+    
+    @abstractmethod
+    def add_mindmap(self, new_mindmap):
+        ...
+
+class BigQueryDatabase(DataBase):
     _instance = None
     _lock = Lock()
 
@@ -110,8 +144,20 @@ WHERE id = @commission_id
         query_job = self.client.query(query, job_config=job_config)
 
         query_job.result()
+    
+    def add_summary(self, new_summary):
+        table_id = "seguimiento_parlamentario.summaries"
 
-class MongoDatabase:
+        job = self.client.load_table_from_json([new_summary], table_id)
+        job.result()
+    
+    def add_mindmap(self, new_mindmap):
+        table_id = "seguimiento_parlamentario.mindmaps"
+
+        job = self.client.load_table_from_json([new_mindmap], table_id)
+        job.result()
+
+class MongoDatabase(DataBase):
     """
     Class for handling MongoDB connections and operations.
     
@@ -150,6 +196,13 @@ class MongoDatabase:
         collection.create_index([('commission_id', ASCENDING)])
         collection.create_index([('date', ASCENDING)])
         collection.create_index([('transcript', TEXT)])
+
+        collection = self.db["summaries"]
+        collection.create_index([('session_id', ASCENDING)])
+
+        collection = self.db["mindmaps"]
+        collection.create_index([('session_id', ASCENDING)])
+
     
     def find_commission(self, commission_id: str) -> dict:
         """
@@ -165,6 +218,7 @@ class MongoDatabase:
         rows = commission_table.find({"id": commission_id})
 
         [commission] = [dict(row.items()) for row in rows]
+        del commission["_id"]
 
         return commission
     
@@ -185,16 +239,6 @@ class MongoDatabase:
         Inserts multiple commission records into the database.
         
         Parameters:
-            commissions (list): A list of commission documents.
-        """
-        commissions_table = self.db["commissions"]
-        commissions_table.insert_many(commissions)
-    
-    def add_commissions(self, commissions: list[dict]):
-        """
-        Inserts multiple commission records into the database.
-        
-        Parameters:
             new_commissions (list): A list of commission documents.
         """
         commissions_table = self.db["commissions"]
@@ -209,9 +253,20 @@ class MongoDatabase:
         """
         sessions = self.db["sessions"]
         sessions.insert_many([new_session])
+        del new_session["_id"]
     
     def update_last_scraping(self, commission_id: str, new_date: dt.datetime):
         commissions = self.db["commissions"]
         f = { "id": commission_id }
         v = { "$set": { "last_update": new_date } }
         commissions.update_one(f, v)
+
+    def add_summary(self, new_summary):
+        summaries = self.db["summaries"]
+        summaries.insert_many([new_summary])
+        del new_summary["_id"]
+    
+    def add_mindmap(self, new_mindmap):
+        mindmaps = self.db["mindmaps"]
+        mindmaps.insert_many([new_mindmap])
+        del new_mindmap["_id"]

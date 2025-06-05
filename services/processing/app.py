@@ -12,7 +12,10 @@ from seguimiento_parlamentario.core.tasks import create_task
 from seguimiento_parlamentario.core.exceptions import YouTubeVideoNotFoundError
 from seguimiento_parlamentario.core.utils import convert_datetime_strings_to_datetime
 from seguimiento_parlamentario.processing.summarizer import get_summarizer
+from seguimiento_parlamentario.processing.mindmaps import get_mindmap
 import logging
+import re
+import json
 
 scrapers = {
     "Senado": SenateScraper(),
@@ -23,7 +26,7 @@ app = Flask(__name__)
 
 logging.basicConfig(level=logging.INFO)
 
-@app.route("/extract/<commission_id>", methods=["POST"])
+@app.route("/extract/<int:commission_id>", methods=["POST"])
 def extract(commission_id):
     db = get_db()
     commission = db.find_commission(commission_id)
@@ -59,16 +62,16 @@ def transcript():
     processor = get_video_processor(session)
 
     try:
-        print(f"Retrieving transcript from YouTube for session {session['id']}")
+        app.logger.info(f"Retrieving transcript from YouTube for session {session['id']}")
         result = processor.get_transcription_from_yt(session)
+        db.add_session(result)
         if db.find_commission(session["commission_id"])["automatic_processing_enabled"]:
             create_task("summarize", result)
-        else:
-            create_task("save", result)
+            create_task("mindmap", result)
         return f"Transcription found for session {session['id']}", 200
     except YouTubeVideoNotFoundError as e:
-        print(f"No YouTube transcript found for session {session['id']}")
-        create_task("save", session)
+        app.logger.info(f"No YouTube transcript found for session {session['id']}")
+        db.add_session(session)
         return e.message, 200
 
 @app.route("/summarize", methods=["POST"])
@@ -84,8 +87,39 @@ def summarize():
 
     try:
         summarizer = get_summarizer(data)
-        session["summary"] = summarizer.process(data)
-        create_task("save", session)
+        summary = summarizer.process(data)
+        result = {
+            "session_id": session["id"],
+            "model": os.getenv("MODEL_NAME"),
+            "summary": summary
+        }
+        db.add_summary(result)
+        return f"Successfully generate summary for session {session['id']}", 200
+    except Exception as err:
+        app.logger.error(err)
+        return f"Failed to summarize session {session['id']}", 200
+    
+@app.route("/mindmap", methods=["POST"])
+def mindmap():
+    db = get_db()
+    session = convert_datetime_strings_to_datetime(request.get_json())
+    commission = db.find_commission(session["commission_id"])
+    pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
+
+    data = {
+        "session": session,
+        "commission": commission,
+    }
+
+    try:
+        mindmap_generator = get_mindmap(data)
+        mindmap = mindmap_generator.process(data)
+        result = {
+            "session_id": session["id"],
+            "model": os.getenv("MODEL_NAME"),
+            "mindmap": json.loads(re.search(pattern, mindmap, re.DOTALL).group(1))
+        }
+        db.add_mindmap(result)
         return f"Successfully generate summary for session {session['id']}", 200
     except Exception as err:
         app.logger.error(err)
@@ -101,15 +135,6 @@ def trigger():
         create_task(f"extract/{commission_id}", {})
 
     return f"Processing {len(commissions)} commissions", 200
-
-@app.route("/save", methods=["POST"])
-def save():
-    session = request.get_json()
-
-    db = get_db()
-    db.add_session(session)
-
-    return "", 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=os.getenv("PORT"))
